@@ -1,149 +1,417 @@
 """
 Step 1: Train SentencePiece Tokenizer for Multilingual Indian Languages
-- Combines texts from all Indian languages
-- Creates language-agnostic vocabulary (30K tokens)
+- Downloads samples from Sangraha dataset (HuggingFace)
+- Creates language-balanced vocabulary (50K tokens)
 - Handles Brahmic, Perso-Arabic, Latin scripts
+- Optimized for MLM pretraining
+
+Key Improvements:
+- Uses Sangraha dataset directly (no manual data needed)
+- Larger vocabulary (50K) for better multilingual coverage
+- Unigram model (better for morphologically rich languages)
+- Higher character coverage (99.95%)
+- Includes special tokens for BERT-style training
+- Balanced language sampling
 """
 
 import sentencepiece as spm
 import os
 from pathlib import Path
+from datasets import load_dataset
+import random
+from tqdm import tqdm
 
-def combine_corpus(data_dir='data', output_file='data/combined_corpus.txt'):
+
+# =============================================================================
+# CONFIGURATION - CHANGE THESE FOR BETTER RESULTS
+# =============================================================================
+
+CONFIG = {
+    # Vocabulary size: Higher = better coverage but slower training
+    # Recommended: 50K for multilingual, 30K for single language
+    'vocab_size': 50000,
+    
+    # Model type: 'unigram' or 'bpe'
+    # Unigram is better for morphologically rich languages (Indian languages)
+    # BPE is faster but less optimal for complex scripts
+    'model_type': 'unigram',
+    
+    # Character coverage: Higher = more rare characters included
+    # 0.9995 covers rare characters in Sanskrit, Manipuri, etc.
+    'character_coverage': 0.9995,
+    
+    # Number of samples per language for training
+    # More samples = better vocabulary, but slower training
+    'samples_per_language': 75000,
+    
+    # Languages to include (Sangraha language codes)
+    # Add/remove based on your needs
+    'languages': [
+        'hin',  # Hindi
+        'tam',  # Tamil
+        'tel',  # Telugu
+        'mar',  # Marathi
+        'ben',  # Bengali
+        'guj',  # Gujarati
+        'kan',  # Kannada
+        'mal',  # Malayalam
+        'pan',  # Punjabi
+        'ori',  # Odia
+        'asm',  # Assamese
+        'urd',  # Urdu
+    ],
+    
+    # Output paths
+    'corpus_file': 'data/combined_corpus.txt',
+    'model_prefix': 'tokenizer/multilingual_indic',
+}
+
+
+def download_sangraha_corpus(languages, samples_per_lang, output_file):
     """
-    Combines all text files from different languages into one corpus
+    Download and combine text from Sangraha dataset
+    
+    This is the key improvement - uses real data from HuggingFace
+    instead of requiring local files.
+    """
+    
+    print(f"Downloading Sangraha corpus from HuggingFace...")
+    print(f"  Languages: {len(languages)}")
+    print(f"  Samples per language: {samples_per_lang:,}")
+    
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    total_lines = 0
+    
+    with open(output_file, 'w', encoding='utf-8') as outfile:
+        for lang in tqdm(languages, desc="Downloading languages"):
+            try:
+                # Load Sangraha dataset for this language
+                # Using streaming to avoid downloading entire dataset
+                dataset = load_dataset(
+                    "ai4bharat/sangraha",
+                    data_dir="verified",
+                    split="train",
+                    streaming=True
+                )
+                
+                # Filter by language and sample
+                count = 0
+                for example in dataset:
+                    if example.get('lang', '') == lang or lang in str(example):
+                        text = example.get('text', '')
+                        if text and len(text.strip()) > 20:  # Skip very short texts
+                            outfile.write(text.strip() + '\n')
+                            count += 1
+                            total_lines += 1
+                            
+                            if count >= samples_per_lang:
+                                break
+                
+                print(f"  {lang}: {count:,} samples")
+                
+            except Exception as e:
+                print(f"  {lang}: Error - {e}")
+                # Fallback: add sample sentences for this language
+                fallback_samples = get_fallback_samples(lang)
+                for sample in fallback_samples:
+                    outfile.write(sample + '\n')
+                    total_lines += 1
+    
+    print(f"\n✓ Corpus created: {output_file}")
+    print(f"  Total lines: {total_lines:,}")
+    
+    return output_file
+
+
+def get_fallback_samples(lang):
+    """
+    Fallback samples if Sangraha download fails
+    These are just for testing - real training needs more data
+    """
+    
+    fallback = {
+        'hin': [
+            'नमस्ते दुनिया, मैं एक बहुभाषी मॉडल हूँ।',
+            'भारत एक विविधताओं से भरा देश है।',
+            'हिंदी भारत की राजभाषा है।',
+            'प्राकृतिक भाषा प्रसंस्करण एक रोमांचक क्षेत्र है।',
+            'मशीन लर्निंग से कंप्यूटर सीखते हैं।',
+        ] * 100,
+        'tam': [
+            'வணக்கம் உலகம், நான் ஒரு பன்மொழி மாதிரி.',
+            'தமிழ் உலகின் பழமையான மொழிகளில் ஒன்று.',
+            'இயற்கை மொழி செயலாக்கம் ஒரு சுவாரஸ்யமான துறை.',
+            'இயந்திர கற்றல் கணினிகளை கற்க உதவுகிறது.',
+            'தமிழ்நாடு அழகான மாநிலம்.',
+        ] * 100,
+        'tel': [
+            'హలో ప్రపంచం, నేను బహుభాషా నమూనా.',
+            'తెలుగు అందమైన భాష.',
+            'సహజ భాషా ప్రాసెసింగ్ ఆసక్తికరమైన రంగం.',
+            'మషిన్ లెర్నింగ్ కంప్యూటర్లకు నేర్పిస్తుంది.',
+            'ఆంధ్ర ప్రదేశ్ అందమైన రాష్ట్రం.',
+        ] * 100,
+        'mar': [
+            'नमस्कार जग, मी एक बहुभाषी मॉडेल आहे.',
+            'मराठी महाराष्ट्राची राजभाषा आहे.',
+            'नैसर्गिक भाषा प्रक्रिया रोमांचक क्षेत्र आहे.',
+            'मशीन लर्निंग कंप्युटरला शिकवते.',
+            'महाराष्ट्र समृद्ध सांस्कृतिक वारसा असलेले राज्य आहे.',
+        ] * 100,
+        'ben': [
+            'নমস্কার বিশ্ব, আমি একটি বহুভাষিক মডেল।',
+            'বাংলা পশ্চিমবঙ্গের রাজ্য ভাষা।',
+            'প্রাকৃতিক ভাষা প্রক্রিয়াকরণ একটি আকর্ষণীয় ক্ষেত্র।',
+            'মেশিন লার্নিং কম্পিউটারকে শেখায়।',
+            'পশ্চিমবঙ্গ সুন্দর রাজ্য।',
+        ] * 100,
+        'guj': [
+            'નમસ્તે વિશ્વ, હું એક બહુભાષી મોડેલ છું.',
+            'ગુજરાતી ગુજરાતની રાજ્ય ભાષા છે.',
+            'કુદરતી ભાષા પ્રક્રિયા એક રસપ્રદ ક્ષેત્ર છે.',
+            'મશીન લર્નિંગ કમ્પ્યુટરને શીખવે છે.',
+            'ગુજરાત સુંદર રાજ્ય છે.',
+        ] * 100,
+    }
+    
+    return fallback.get(lang, fallback.get('hin', []))
+
+
+def create_local_corpus(data_dir='data', output_file='data/combined_corpus.txt'):
+    """
+    Alternative: Combine local text files into corpus
+    Use this if you have your own data files
     
     Expected structure:
     data/
     ├── hindi_data.txt
     ├── tamil_data.txt
-    ├── telugu_data.txt
-    ├── marathi_data.txt
     └── ... (other language files)
     """
     
-    print("Combining corpus from all language files...")
+    print("Combining local corpus files...")
     
     combined_count = 0
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
     with open(output_file, 'w', encoding='utf-8') as outfile:
         for file_path in Path(data_dir).glob('*_data.txt'):
             print(f"  Processing {file_path.name}...")
             try:
                 with open(file_path, 'r', encoding='utf-8') as infile:
                     for line in infile:
-                        if line.strip():
+                        if line.strip() and len(line.strip()) > 10:
                             outfile.write(line)
                             combined_count += 1
             except Exception as e:
                 print(f"  Error reading {file_path}: {e}")
     
-    print(f"✓ Combined {combined_count} lines into {output_file}")
+    print(f"✓ Combined {combined_count:,} lines into {output_file}")
     return output_file
 
 
-def train_sentencepiece_tokenizer(corpus_path='data/combined_corpus.txt', 
-                                  model_prefix='tokenizer/multilingual_indic',
-                                  vocab_size=30000):
+def train_sentencepiece_tokenizer(corpus_path, model_prefix, vocab_size=50000, 
+                                   model_type='unigram', character_coverage=0.9995):
     """
-    Train SentencePiece tokenizer with BPE algorithm
+    Train SentencePiece tokenizer with optimized settings for Indian languages
     
-    Args:
-        corpus_path: Path to combined multilingual corpus
-        model_prefix: Output path (creates .model and .vocab files)
-        vocab_size: Number of vocabulary tokens
+    Key improvements over default:
+    - Unigram model (better for morphologically rich languages)
+    - Higher character coverage (for rare scripts)
+    - Special tokens for BERT-style training
+    - Better handling of mixed scripts
     """
     
-    print(f"\nTraining SentencePiece tokenizer...")
+    print(f"\n{'='*60}")
+    print("TRAINING SENTENCEPIECE TOKENIZER")
+    print('='*60)
     print(f"  Corpus: {corpus_path}")
-    print(f"  Vocab size: {vocab_size}")
+    print(f"  Vocab size: {vocab_size:,}")
+    print(f"  Model type: {model_type}")
+    print(f"  Character coverage: {character_coverage}")
     print(f"  Output prefix: {model_prefix}")
     
-    # Create output directory if needed
+    # Create output directory
     os.makedirs(os.path.dirname(model_prefix), exist_ok=True)
     
+    # Special tokens for BERT-style training
+    # These are critical for MLM pretraining
+    special_tokens = [
+        '[PAD]',   # Padding token
+        '[UNK]',   # Unknown token  
+        '[CLS]',   # Classification token (sentence start)
+        '[SEP]',   # Separator token (sentence end)
+        '[MASK]',  # Mask token for MLM
+    ]
+    
+    # Train SentencePiece
     spm.SentencePieceTrainer.train(
         input=corpus_path,
         model_prefix=model_prefix,
         vocab_size=vocab_size,
-        model_type='bpe',  # BPE algorithm
-        character_coverage=0.99,  # Cover 99% of characters
-        normalization_rule_name='identity',  # Preserve script characteristics
-        split_by_unicode_script=True,  # Split by script type (Brahmi, Latin, etc)
+        
+        # Model type: 'unigram' recommended for Indian languages
+        model_type=model_type,
+        
+        # Character coverage: Higher = more rare characters
+        character_coverage=character_coverage,
+        
+        # Normalization: Identity preserves script characteristics
+        normalization_rule_name='identity',
+        
+        # Script handling: Split by unicode script for Brahmic scripts
+        split_by_unicode_script=True,
         split_by_number=True,
         split_by_whitespace=True,
-        pad_id=0,
-        unk_id=1,
-        bos_id=2,
-        eos_id=3,
-        eos_piece='</s>',
-        unk_piece='<unk>',
-        unk_surface='⁇',
+        
+        # Byte fallback: Handle unknown characters gracefully
+        byte_fallback=True,
+        
+        # Special token IDs (BERT-compatible)
+        pad_id=0,      # [PAD]
+        unk_id=1,      # [UNK]
+        bos_id=2,      # [CLS] (beginning of sentence)
+        eos_id=3,      # [SEP] (end of sentence)
+        
+        # Add user-defined special tokens
+        user_defined_symbols=special_tokens,
+        
+        # Control symbols for better handling
+        control_symbols=['[MASK]'],
+        
+        # Training efficiency
+        input_sentence_size=10000000,  # Max sentences to use
+        shuffle_input_sentence=True,    # Shuffle for better sampling
+        
+        # Subword regularization (helps training)
+        # Enable for better generalization
+        # sample_alpha=0.1,  # Uncomment for subword regularization
     )
     
-    print(f"✓ SentencePiece tokenizer trained!")
+    print(f"\n✓ SentencePiece tokenizer trained!")
     print(f"  Model: {model_prefix}.model")
     print(f"  Vocab: {model_prefix}.vocab")
     
     return f"{model_prefix}.model"
 
 
-def test_tokenizer(model_path='tokenizer/multilingual_indic.model'):
+def test_tokenizer(model_path):
     """
-    Test the trained tokenizer on sample texts
+    Test the trained tokenizer on sample texts from different languages
     """
     
-    print(f"\nTesting tokenizer...")
+    print(f"\n{'='*60}")
+    print("TESTING TOKENIZER")
+    print('='*60)
     
     sp = spm.SentencePieceProcessor()
     sp.load(model_path)
+    
+    # Print tokenizer info
+    print(f"\nTokenizer Info:")
+    print(f"  Vocabulary size: {sp.get_piece_size():,}")
+    print(f"  Special tokens:")
+    print(f"    PAD (0): {sp.id_to_piece(0)}")
+    print(f"    UNK (1): {sp.id_to_piece(1)}")
+    print(f"    BOS (2): {sp.id_to_piece(2)}")
+    print(f"    EOS (3): {sp.id_to_piece(3)}")
     
     # Test samples in different languages
     test_samples = {
         'Hindi': 'नमस्ते दुनिया, मैं एक बहुभाषी मॉडल हूँ।',
         'Tamil': 'வணக்கம் உலகம், நான் ஒரு பன்மொழி மாதிரி.',
         'Telugu': 'హలో ప్రపంచం, నేను బహుభాషా నమూనా.',
-        'Marathi': 'नमस्कार जग, मी एक बहुभाषी मॉडल आहे.',
+        'Marathi': 'नमस्कार जग, मी एक बहुभाषी मॉडेल आहे.',
         'Bengali': 'নমস্কার বিশ্ব, আমি একটি বহুভাষিক মডেল।',
+        'Gujarati': 'નમસ્તે વિશ્વ, હું એક બહુભાષી મોડેલ છું.',
+        'Kannada': 'ಹಲೋ ಜಗತ್ತು, ನಾನು ಬಹುಭಾಷಾ ಮಾದರಿ.',
+        'Malayalam': 'ഹലോ ലോകം, ഞാൻ ഒരു ബഹുഭാഷാ മാതൃകയാണ്.',
+        'English': 'Hello world, I am a multilingual model.',
     }
     
+    print(f"\nTokenization Results:")
     for lang, text in test_samples.items():
         pieces = sp.encode_as_pieces(text)
         ids = sp.encode_as_ids(text)
+        
+        # Fertility: Number of tokens per word (lower is better)
+        words = text.split()
+        fertility = len(ids) / max(len(words), 1)
+        
         print(f"\n{lang}:")
-        print(f"  Text: {text[:50]}...")
-        print(f"  Tokens: {pieces[:10]}...")
-        print(f"  IDs: {ids[:10]}")
-        print(f"  Total tokens: {len(ids)}")
+        print(f"  Text: {text}")
+        print(f"  Tokens ({len(ids)}): {pieces[:12]}{'...' if len(pieces) > 12 else ''}")
+        print(f"  Fertility: {fertility:.2f} tokens/word")
     
-    print(f"\n✓ Tokenizer working on all languages!")
-    print(f"  Vocabulary size: {sp.get_piece_size()}")
+    # Summary
+    print(f"\n{'='*60}")
+    print("TOKENIZER SUMMARY")
+    print('='*60)
+    print(f"  Vocabulary size: {sp.get_piece_size():,}")
+    print(f"  Model ready for training!")
     
     return sp
 
 
-if __name__ == '__main__':
-    print("="*60)
-    print("STEP 1: Train SentencePiece Tokenizer")
-    print("="*60)
+def main():
+    """
+    Main function to train tokenizer
+    """
     
-    # Step 1: Combine corpus
-    # NOTE: You need to have language data files first
-    # For testing, create sample data:
-    # python 0_prepare_sample_data.py
+    print("="*60)
+    print("STEP 1: TRAIN SENTENCEPIECE TOKENIZER")
+    print("="*60)
+    print(f"\nConfiguration:")
+    print(f"  Vocab size: {CONFIG['vocab_size']:,}")
+    print(f"  Model type: {CONFIG['model_type']}")
+    print(f"  Character coverage: {CONFIG['character_coverage']}")
+    print(f"  Languages: {len(CONFIG['languages'])}")
     
-    corpus_file = combine_corpus(data_dir='data', output_file='data/combined_corpus.txt')
+    # Step 1: Prepare corpus
+    print(f"\n[1/3] Preparing corpus...")
+    
+    # Check if local data exists
+    local_files = list(Path('data').glob('*_data.txt')) if os.path.exists('data') else []
+    
+    if local_files:
+        print(f"  Found {len(local_files)} local data files, using those...")
+        corpus_file = create_local_corpus(
+            data_dir='data',
+            output_file=CONFIG['corpus_file']
+        )
+    else:
+        print(f"  No local data found, downloading from Sangraha...")
+        corpus_file = download_sangraha_corpus(
+            languages=CONFIG['languages'],
+            samples_per_lang=CONFIG['samples_per_language'],
+            output_file=CONFIG['corpus_file']
+        )
     
     # Step 2: Train tokenizer
+    print(f"\n[2/3] Training tokenizer...")
     model_path = train_sentencepiece_tokenizer(
         corpus_path=corpus_file,
-        model_prefix='tokenizer/multilingual_indic',
-        vocab_size=30000
+        model_prefix=CONFIG['model_prefix'],
+        vocab_size=CONFIG['vocab_size'],
+        model_type=CONFIG['model_type'],
+        character_coverage=CONFIG['character_coverage'],
     )
     
     # Step 3: Test tokenizer
+    print(f"\n[3/3] Testing tokenizer...")
     sp = test_tokenizer(model_path)
     
     print("\n" + "="*60)
-    print("✓ TOKENIZER READY!")
-    print("Next: Run 2_prepare_data.py")
+    print("✓ TOKENIZER TRAINING COMPLETE!")
     print("="*60)
+    print(f"\nOutput files:")
+    print(f"  Model: {CONFIG['model_prefix']}.model")
+    print(f"  Vocab: {CONFIG['model_prefix']}.vocab")
+    print(f"\nNext step:")
+    print(f"  python 2_prepare_data.py")
+    print("="*60)
+
+
+if __name__ == '__main__':
+    main()
