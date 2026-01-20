@@ -1,8 +1,8 @@
 """
-Step 2: Prepare Training Data from Sangraha
-- Loads Sangraha dataset from HuggingFace Hub
-- Tokenizes using SentencePiece
-- Prepares batches for training
+Step 2: Prepare Translation Training Data
+- Downloads paired data from Samanantar (EN ↔ Indic)
+- Tokenizes BOTH source (English) and target (Indic)
+- Saves as translation pairs for seq2seq training
 """
 
 from datasets import load_dataset, Dataset
@@ -11,171 +11,217 @@ import numpy as np
 from tqdm import tqdm
 import os
 
-class MultilingualDataProcessor:
-    """Handles data loading and tokenization"""
+# Configuration
+TOKENIZER_PATH = 'tokenizer/multilingual_indic-1.model'
+OUTPUT_DIR = 'data/tokenized_translation'
+NUM_SAMPLES = 500_000  # Samples per language pair
+MAX_LENGTH = 512
+
+# Languages to include (Samanantar format)
+LANGUAGES = ['hi', 'ta', 'te', 'mr', 'kn', 'ml']
+
+
+class TranslationDataProcessor:
+    """Handles parallel data loading and tokenization for translation"""
     
-    def __init__(self, tokenizer_path='tokenizer/multilingual_indic.model', 
-                 max_length=512):
-        """
-        Args:
-            tokenizer_path: Path to SentencePiece model
-            max_length: Maximum sequence length
-        """
+    def __init__(self, tokenizer_path=TOKENIZER_PATH, max_length=MAX_LENGTH):
         self.sp = spm.SentencePieceProcessor()
         self.sp.load(tokenizer_path)
         self.max_length = max_length
         self.pad_id = 0
+        self.bos_id = 2
         self.eos_id = 3
         
         print(f"✓ Tokenizer loaded: {tokenizer_path}")
-        print(f"  Vocabulary size: {self.sp.get_piece_size()}")
+        print(f"  Vocabulary size: {self.sp.get_piece_size():,}")
     
-    def tokenize_text(self, text):
-        """
-        Tokenize a single text
+    def tokenize_pair(self, src_text, tgt_text):
+        """Tokenize source and target texts"""
+        # Source (English)
+        src_ids = self.sp.encode_as_ids(src_text)
+        if len(src_ids) > self.max_length:
+            src_ids = src_ids[:self.max_length]
         
-        Args:
-            text: Input text string
-            
-        Returns:
-            list: Token IDs
-        """
-        token_ids = self.sp.encode_as_ids(text)
+        # Target (Indic) - add BOS/EOS
+        tgt_ids = self.sp.encode_as_ids(tgt_text)
+        if len(tgt_ids) > self.max_length - 2:
+            tgt_ids = tgt_ids[:self.max_length - 2]
+        tgt_ids = [self.bos_id] + tgt_ids + [self.eos_id]
         
-        # Pad or truncate to max_length
-        if len(token_ids) < self.max_length:
-            token_ids += [self.pad_id] * (self.max_length - len(token_ids))
-        else:
-            token_ids = token_ids[:self.max_length]
-        
-        return token_ids
-    
-    def process_batch(self, texts):
-        """
-        Process a batch of texts
-        
-        Args:
-            texts: List of text strings
-            
-        Returns:
-            dict: {'input_ids': [...]}
-        """
-        input_ids = [self.tokenize_text(text) for text in texts]
-        return {'input_ids': input_ids}
+        return {
+            'src_ids': src_ids,
+            'tgt_ids': tgt_ids,
+        }
 
 
-def load_sangraha_data(subset='verified', num_samples=None):
+def download_translation_pairs(languages, samples_per_lang, output_dir):
     """
-    Load Sangraha dataset from HuggingFace Hub
+    Download parallel translation data from Samanantar
     
-    Args:
-        subset: 'verified' (high quality), 'verified+synthetic' (all quality levels), etc.
-        num_samples: Number of samples to load (None = all)
-        
-    Returns:
-        Dataset: HuggingFace dataset with 'text' field
+    Returns Dataset with 'src_ids' and 'tgt_ids' fields
     """
     
-    print(f"Loading Sangraha dataset (subset: {subset})...")
+    print("="*60)
+    print("DOWNLOADING TRANSLATION DATA FROM SAMANANTAR")
+    print("="*60)
+    print(f"Languages: {len(languages)}")
+    print(f"Samples per language: {samples_per_lang:,}")
     
-    # Load from HuggingFace Hub
-    dataset = load_dataset("ai4bharat/sangraha", data_dir=subset, split='train')
+    all_pairs = []
     
-    print(f"  Loaded {len(dataset)} examples")
+    for lang in tqdm(languages, desc="Downloading languages"):
+        try:
+            print(f"\n  Loading en-{lang} translation pairs...")
+            
+            # Load Samanantar dataset
+            dataset = load_dataset(
+                "ai4bharat/samanantar",
+                lang,
+                split="train",
+                streaming=True
+            )
+            
+            count = 0
+            for example in dataset:
+                src = example.get('src', '')  # English
+                tgt = example.get('tgt', '')  # Indic
+                
+                # Validate both texts
+                if (src and tgt and 
+                    len(src.strip()) > 20 and 
+                    len(tgt.strip()) > 20 and
+                    not tgt.isascii()):
+                    
+                    # Add forward pair (EN → Indic)
+                    all_pairs.append({
+                        'src': src.strip(),
+                        'tgt': tgt.strip(),
+                        'direction': f'en→{lang}'
+                    })
+                    
+                    # Add reverse pair (Indic → EN)
+                    all_pairs.append({
+                        'src': tgt.strip(),
+                        'tgt': src.strip(),
+                        'direction': f'{lang}→en'
+                    })
+                    
+                    count += 1
+                    
+                    if count >= samples_per_lang:
+                        break
+            
+            print(f"    {lang}: {count:,} pairs ({count*2:,} with reverse)")
+            
+        except Exception as e:
+            print(f"    {lang}: Error - {e}")
     
-    # Sample if specified
-    if num_samples:
-        indices = np.random.choice(len(dataset), size=min(num_samples, len(dataset)), replace=False)
-        dataset = dataset.select(indices)
-        print(f"  Sampled to {len(dataset)} examples")
+    print(f"\n✓ Downloaded {len(all_pairs):,} total translation pairs (bidirectional)")
+    
+    # Convert to HuggingFace Dataset
+    dataset = Dataset.from_dict({
+        'src': [p['src'] for p in all_pairs],
+        'tgt': [p['tgt'] for p in all_pairs],
+        'direction': [p['direction'] for p in all_pairs],
+    })
     
     return dataset
 
 
-def prepare_training_data(tokenizer_path='tokenizer/multilingual_indic.model',
-                         output_dir='data/tokenized_sangraha',
-                         num_samples=5_000_000,
-                         batch_size=1000):
+def prepare_translation_data(
+    tokenizer_path=TOKENIZER_PATH,
+    output_dir=OUTPUT_DIR,
+    languages=LANGUAGES,
+    num_samples=NUM_SAMPLES,
+):
     """
-    Prepare complete training dataset
-    
-    Args:
-        tokenizer_path: Path to SentencePiece model
-        output_dir: Output directory for tokenized data
-        num_samples: Number of samples to use
-        batch_size: Batch size for tokenization
+    Prepare complete translation training dataset
     """
     
     print("="*60)
-    print("PREPARING TRAINING DATA")
+    print("PREPARING TRANSLATION DATA")
     print("="*60)
+    print(f"  Tokenizer: {tokenizer_path}")
+    print(f"  Output: {output_dir}")
+    print(f"  Languages: {len(languages)}")
+    print(f"  Samples per language: {num_samples:,}")
     
-    # Step 1: Load Sangraha
-    dataset = load_sangraha_data(subset='verified', num_samples=num_samples)
+    # Step 1: Download paired data
+    dataset = download_translation_pairs(languages, num_samples, output_dir)
     
-    # Step 2: Initialize processor
-    processor = MultilingualDataProcessor(tokenizer_path)
+    # Step 2: Initialize tokenizer
+    processor = TranslationDataProcessor(tokenizer_path)
     
-    # Step 3: Tokenize dataset
-    print(f"\nTokenizing {len(dataset)} examples...")
+    # Step 3: Tokenize pairs
+    print(f"\nTokenizing {len(dataset):,} translation pairs...")
     
     def tokenize_function(examples):
-        return processor.process_batch(examples['text'])
+        results = {
+            'src_ids': [],
+            'tgt_ids': [],
+        }
+        
+        for src, tgt in zip(examples['src'], examples['tgt']):
+            pair = processor.tokenize_pair(src, tgt)
+            results['src_ids'].append(pair['src_ids'])
+            results['tgt_ids'].append(pair['tgt_ids'])
+        
+        return results
     
-    # Tokenize with batching for speed
+    # Tokenize with batching
     tokenized_dataset = dataset.map(
         tokenize_function,
         batched=True,
-        batch_size=batch_size,
-        remove_columns=['text'],  # Remove original text to save space
-        desc="Tokenizing"
+        batch_size=1000,
+        remove_columns=['src', 'tgt'],  # Remove text to save space
+        desc="Tokenizing pairs"
     )
     
     # Step 4: Split into train/eval
     print("\nSplitting into train/validation...")
-    split_dataset = tokenized_dataset.train_test_split(test_size=0.1, seed=42)
+    split_dataset = tokenized_dataset.train_test_split(test_size=0.05, seed=42)
     
-    print(f"  Training: {len(split_dataset['train'])} examples")
-    print(f"  Validation: {len(split_dataset['test'])} examples")
+    print(f"  Training: {len(split_dataset['train']):,} pairs")
+    print(f"  Validation: {len(split_dataset['test']):,} pairs")
     
     # Step 5: Save
     print(f"\nSaving to {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
     split_dataset.save_to_disk(output_dir)
     
-    print(f"✓ Data prepared and saved!")
-    print(f"  Train: {len(split_dataset['train'])} examples")
-    print(f"  Val: {len(split_dataset['test'])} examples")
+    print(f"\n✓ Translation data prepared!")
+    print(f"  Train: {len(split_dataset['train']):,} pairs")
+    print(f"  Val: {len(split_dataset['test']):,} pairs")
     
     # Print sample
-    print(f"\nSample tokenized example:")
-    sample = tokenized_dataset[0]
-    print(f"  Input IDs (first 10): {sample['input_ids'][:10]}")
-    print(f"  Length: {len(sample['input_ids'])}")
+    sample = split_dataset['train'][0]
+    print(f"\nSample translation pair:")
+    print(f"  Source IDs (EN): {sample['src_ids'][:20]}...")
+    print(f"  Target IDs (Indic): {sample['tgt_ids'][:20]}...")
     
     return split_dataset
 
 
 if __name__ == '__main__':
-    # Configuration
-    TOKENIZER_PATH = 'tokenizer/multilingual_indic.model'
-    OUTPUT_DIR = 'data/tokenized_sangraha'
-    NUM_SAMPLES = 5_000_000  # 5M samples ≈ 10B tokens
+    import argparse
     
-    print(f"Configuration:")
-    print(f"  Tokenizer: {TOKENIZER_PATH}")
-    print(f"  Output: {OUTPUT_DIR}")
-    print(f"  Samples: {NUM_SAMPLES:,}")
+    parser = argparse.ArgumentParser(description='Prepare translation training data')
+    parser.add_argument('--tokenizer', default=TOKENIZER_PATH,
+                       help='Path to tokenizer model')
+    parser.add_argument('--output', default=OUTPUT_DIR,
+                       help='Output directory')
+    parser.add_argument('--samples', type=int, default=NUM_SAMPLES,
+                       help='Samples per language')
     
-    # Prepare data
-    dataset = prepare_training_data(
-        tokenizer_path=TOKENIZER_PATH,
-        output_dir=OUTPUT_DIR,
-        num_samples=NUM_SAMPLES,
-        batch_size=1000
+    args = parser.parse_args()
+    
+    dataset = prepare_translation_data(
+        tokenizer_path=args.tokenizer,
+        output_dir=args.output,
+        num_samples=args.samples,
     )
     
     print("\n" + "="*60)
-    print("✓ DATA READY!")
-    print("Next: Run 3_train_model.py")
+    print("✓ DATA READY FOR TRANSLATION TRAINING!")
+    print("Next: Run 'python 3_train_model.py'")
     print("="*60)
