@@ -1,0 +1,104 @@
+{
+  "app": {
+    "name": "FinTraceQA"
+  },
+  "auth": {
+    "login": "Login",
+    "signup": "Sign Up",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "fullName": "Full Name",
+    "noAccount": "Don't have an account? Sign Up",
+    "hasAccount": "Already have an account? Login",
+    "loginTitle": "Welcome Back",
+    "loginSubtitle": "Sign in to your account",
+    "signupTitle": "Create Account",
+    "signupSubtitle": "Join FinTraceQA today",
+    "investorType": "Investor Type",
+    "riskAppetite": "Risk Appetite",
+    "preferredLanguage": "Preferred Language",
+    "retail": "Retail",
+    "institutional": "Institutional",
+    "student": "Student",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "loading": "Please wait...",
+    "forgotPassword": "Forgot Password?"
+  },
+  "errors": {
+    "invalidEmail": "Invalid email address",
+    "weakPassword": "Password must be at least 6 characters",
+    "passwordMismatch": "Passwords do not match",
+    "userNotFound": "No account found with this email",
+    "wrongPassword": "Incorrect password",
+    "emailInUse": "Email already in use",
+    "networkError": "Network error. Please try again.",
+    "genericError": "Something went wrong. Please try again.",
+    "fillAllFields": "Please fill in all fields",
+    "nameTooShort": "Name must be at least 2 characters"
+  },
+  "tabs": {
+    "news": "News",
+    "chatbot": "Chatbot",
+    "profile": "Profile"
+  },
+  "news": {
+    "title": "Financial News",
+    "readMore": "Read More",
+    "pullToRefresh": "Pull to refresh",
+    "loading": "Loading news...",
+    "empty": "No news available at the moment.",
+    "error": "Failed to load news. Please try again.",
+    "retry": "Retry",
+    "source": "Source",
+    "justNow": "Just now"
+  },
+  "chatbot": {
+    "title": "Financial Assistant",
+    "placeholder": "Ask a financial question...",
+    "send": "Send",
+    "typing": "Thinking...",
+    "viewReasoning": "View Reasoning Explanation",
+    "hideReasoning": "Hide Explanation",
+    "confidence": "Confidence",
+    "greeting": "Hello! I'm your financial assistant. Ask me anything about finance, investments, or markets.",
+    "error": "Failed to get a response. Please try again."
+  },
+  "profile": {
+    "title": "Profile",
+    "name": "Name",
+    "email": "Email",
+    "language": "Language",
+    "investorType": "Investor Type",
+    "riskAppetite": "Risk Appetite",
+    "editProfile": "Edit Profile",
+    "changeLanguage": "Change Language",
+    "logout": "Logout",
+    "memberSince": "Member Since",
+    "saveChanges": "Save Changes",
+    "cancel": "Cancel",
+    "updateSuccess": "Profile updated successfully"
+  },
+  "language": {
+    "select": "Select Language",
+    "en": "English",
+    "ta": "Tamil",
+    "hi": "Hindi",
+    "ml": "Malayalam",
+    "te": "Telugu",
+    "mr": "Marathi"
+  },
+  "common": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "close": "Close",
+    "back": "Back",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success"
+  }
+}

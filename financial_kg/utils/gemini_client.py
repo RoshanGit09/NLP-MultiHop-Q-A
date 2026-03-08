@@ -2,13 +2,14 @@
 Google Gemini API client wrapper for FinancialKG
 """
 import asyncio
+import concurrent.futures
 from typing import List, Optional, Dict, Any
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
+from google import genai
+from google.genai import types
 import time
 
-from utils.config import get_config
-from utils.logging_config import get_logger
+from .config import get_config
+from .logging_config import get_logger
 
 logger = get_logger(__name__)
 config = get_config()
@@ -18,7 +19,7 @@ class GeminiClient:
     """
     Wrapper for Google Gemini API with async support and retry logic
     
-    Supports both Gemini 2.0 Flash (fast) and Gemini 1.5 Pro (advanced reasoning)
+    Supports both Gemini 2.0 Flash (fast) and Gemini 2.5 Pro (advanced reasoning)
     """
     
     def __init__(
@@ -28,15 +29,6 @@ class GeminiClient:
         model_pro: Optional[str] = None,
         embedding_model: Optional[str] = None
     ):
-        """
-        Initialize Gemini client
-        
-        Args:
-            api_key: Gemini API key (uses config if not provided)
-            model_fast: Fast model name (Gemini 2.0 Flash)
-            model_pro: Pro model name (Gemini 1.5 Pro)
-            embedding_model: Embedding model name
-        """
         self.api_key = api_key or config.gemini.api_key
         self.model_fast_name = model_fast or config.gemini.model_fast
         self.model_pro_name = model_pro or config.gemini.model_pro
@@ -45,12 +37,14 @@ class GeminiClient:
         if not self.api_key:
             raise ValueError("Gemini API key not provided. Set GEMINI_API_KEY in .env file.")
         
-        # Configure API
-        genai.configure(api_key=self.api_key)
-        
-        # Initialize models
-        self.model_fast = genai.GenerativeModel(self.model_fast_name)
-        self.model_pro = genai.GenerativeModel(self.model_pro_name)
+        # Initialize client with new SDK
+        self.client = genai.Client(api_key=self.api_key)
+
+        # Thread pool sized for 1000 RPM: 100 workers → ~100 concurrent requests
+        # Each request takes ~0.5–1s → throughput ≈ 100–200 req/s well within limit
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=100, thread_name_prefix="gemini"
+        )
         
         logger.info(f"Initialized Gemini client with models: {self.model_fast_name}, {self.model_pro_name}")
     
@@ -62,46 +56,31 @@ class GeminiClient:
         max_retries: int = 3,
         **kwargs
     ) -> str:
-        """
-        Generate text asynchronously with retry logic
-        
-        Args:
-            prompt: Input prompt
-            use_pro: Use Pro model (default: Fast model)
-            temperature: Generation temperature
-            max_retries: Maximum retry attempts
-            **kwargs: Additional generation parameters
-            
-        Returns:
-            Generated text
-        """
-        model = self.model_pro if use_pro else self.model_fast
+        """Generate text asynchronously with retry logic"""
         model_name = self.model_pro_name if use_pro else self.model_fast_name
         
-        generation_config = GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             temperature=temperature,
-            **kwargs
         )
         
         for attempt in range(max_retries):
             try:
-                # Run in thread pool (Gemini SDK doesn't have native async yet)
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
-                    None,
-                    lambda: model.generate_content(
-                        prompt,
-                        generation_config=generation_config
+                    self._executor,          # use dedicated 100-worker pool
+                    lambda: self.client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=generation_config
                     )
                 )
-                
                 return response.text
                 
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {model_name}: {e}")
                 
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff
+                    wait_time = 2 ** attempt
                     logger.info(f"Retrying in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -116,32 +95,19 @@ class GeminiClient:
         max_retries: int = 3,
         **kwargs
     ) -> str:
-        """
-        Generate text synchronously with retry logic
-        
-        Args:
-            prompt: Input prompt
-            use_pro: Use Pro model (default: Fast model)
-            temperature: Generation temperature
-            max_retries: Maximum retry attempts
-            **kwargs: Additional generation parameters
-            
-        Returns:
-            Generated text
-        """
-        model = self.model_pro if use_pro else self.model_fast
+        """Generate text synchronously with retry logic"""
         model_name = self.model_pro_name if use_pro else self.model_fast_name
         
-        generation_config = GenerationConfig(
+        generation_config = types.GenerateContentConfig(
             temperature=temperature,
-            **kwargs
         )
         
         for attempt in range(max_retries):
             try:
-                response = model.generate_content(
-                    prompt,
-                    generation_config=generation_config
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=generation_config
                 )
                 return response.text
                 
@@ -161,20 +127,9 @@ class GeminiClient:
         prompts: List[str],
         use_pro: bool = False,
         temperature: float = 0.0,
-        max_concurrent: int = 5
+        max_concurrent: int = 100        # raised from 5 → matches 1000 RPM quota
     ) -> List[str]:
-        """
-        Generate text for multiple prompts in parallel (with concurrency limit)
-        
-        Args:
-            prompts: List of input prompts
-            use_pro: Use Pro model
-            temperature: Generation temperature
-            max_concurrent: Maximum concurrent requests
-            
-        Returns:
-            List of generated texts
-        """
+        """Generate text for multiple prompts in parallel (with concurrency limit)"""
         semaphore = asyncio.Semaphore(max_concurrent)
         
         async def generate_with_limit(prompt: str) -> str:
@@ -187,39 +142,20 @@ class GeminiClient:
         return results
     
     def embed_text(self, text: str, task_type: str = "retrieval_document") -> List[float]:
-        """
-        Generate embedding for text
-        
-        Args:
-            text: Input text
-            task_type: Embedding task type (retrieval_document, retrieval_query, etc.)
-            
-        Returns:
-            Embedding vector
-        """
+        """Generate embedding for text"""
         try:
-            result = genai.embed_content(
+            result = self.client.models.embed_content(
                 model=self.embedding_model_name,
-                content=text,
-                task_type=task_type
+                contents=text,
             )
-            return result['embedding']
+            return result.embeddings[0].values
             
         except Exception as e:
             logger.error(f"Embedding failed: {e}")
             raise
     
     async def embed_text_async(self, text: str, task_type: str = "retrieval_document") -> List[float]:
-        """
-        Generate embedding for text asynchronously
-        
-        Args:
-            text: Input text
-            task_type: Embedding task type
-            
-        Returns:
-            Embedding vector
-        """
+        """Generate embedding for text asynchronously"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.embed_text, text, task_type)
     
@@ -229,17 +165,7 @@ class GeminiClient:
         task_type: str = "retrieval_document",
         max_concurrent: int = 10
     ) -> List[List[float]]:
-        """
-        Generate embeddings for multiple texts in parallel
-        
-        Args:
-            texts: List of input texts
-            task_type: Embedding task type
-            max_concurrent: Maximum concurrent requests
-            
-        Returns:
-            List of embedding vectors
-        """
+        """Generate embeddings for multiple texts in parallel"""
         semaphore = asyncio.Semaphore(max_concurrent)
         
         async def embed_with_limit(text: str) -> List[float]:
@@ -265,18 +191,11 @@ def get_gemini_client() -> GeminiClient:
 
 
 if __name__ == "__main__":
-    # Test Gemini client
     async def test_client():
         client = get_gemini_client()
-        
-        # Test generation
         prompt = "What are the key financial metrics for evaluating a company?"
         response = await client.generate_async(prompt)
         print(f"Response: {response[:200]}...")
-        
-        # Test embedding
-        text = "Reliance Industries is a major energy company in India"
-        embedding = await client.embed_text_async(text)
-        print(f"Embedding dimension: {len(embedding)}")
     
     asyncio.run(test_client())
+

@@ -1,0 +1,33 @@
+# Path scoring weights for FinTraceQA multi-hop KG traversal
+# All weights must sum to 1.0
+
+scoring:
+  entity_link_weight: 0.35
+  relation_link_weight: 0.25
+  temporal_match_weight: 0.20
+  path_length_penalty_weight: 0.20
+
+# Path length penalty: score multiplied by (1 - penalty * (hops - 1))
+path_length_penalty_per_hop: 0.08
+
+# Max hops for traversal
+max_hops: 4
+top_k_paths: 3
+
+# Confidence threshold below which we add warnings
+confidence_threshold: 0.60
+
+# Entity linking
+entity_link:
+  fuzzy_cutoff: 0.60
+  top_k_candidates: 5
+
+# Faithfulness verifier
+faithfulness:
+  # Min ratio of explanation sentences that must be aligned to a triple
+  min_aligned_ratio: 0.80
+
+# Session memory
+session:
+  max_turns: 10
+  entity_ttl_turns: 5

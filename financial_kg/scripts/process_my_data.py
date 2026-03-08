@@ -14,19 +14,20 @@ from pathlib import Path
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from financial_kg import (
-    create_entity,
-    Relationship,
-    RelationshipProperties,
-    TemporalAttributes,
-    KnowledgeGraph,
-    Neo4jStorage,
-    get_logger,
-    setup_logging
-)
-from financial_kg.data_loaders.stock_loader import StockDataLoader
-from financial_kg.extractors.gemini_atomic_extractor import GeminiAtomicExtractor
-import pandas as pd
+try:
+    from financial_kg.kg_builder.kg_builder import FinancialKGBuilder
+    from financial_kg.data_loaders.stock_loader import StockDataLoader
+    from financial_kg.data_loaders.news_loader import NewsDataLoader
+    from financial_kg.utils.logging_config import setup_logging, get_logger
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Running simple demo instead...")
+    
+    # Fallback imports
+    from models.entity import create_entity
+    from models.relationship import Relationship, RelationshipProperties
+    from models.knowledge_graph import KnowledgeGraph
+    from utils.logging_config import setup_logging, get_logger
 
 # Setup logging
 setup_logging(level="INFO")

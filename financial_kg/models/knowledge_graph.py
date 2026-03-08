@@ -1,7 +1,7 @@
 """
 Knowledge Graph model for FinancialKG
 """
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -51,25 +51,40 @@ class KnowledgeGraph(BaseModel):
         description="KG version for tracking"
     )
     
-    metadata: Dict[str, any] = Field(
+    metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata"
     )
     
     def add_entity(self, entity: Entity) -> None:
-        """Add an entity to the graph"""
-        # Check if entity already exists
+        """Add an entity to the graph, deduplicating by ID and normalized name"""
+        # Normalize the entity ID for consistent lookup
+        entity.id = entity.id.upper().replace(" ", "_").replace("-", "_")
+
+        # Check duplicate by ID
         existing = self.get_entity_by_id(entity.id)
         if existing:
-            # Update existing entity
             idx = self.entities.index(existing)
             self.entities[idx] = entity
         else:
-            self.entities.append(entity)
-        
+            # Also check by normalized name to catch case/spacing variants
+            existing_by_name = self.get_entity_by_name(entity.name)
+            if existing_by_name:
+                # Reuse the existing entity's ID to merge under one node
+                entity.id = existing_by_name.id
+                idx = self.entities.index(existing_by_name)
+                self.entities[idx] = entity
+            else:
+                self.entities.append(entity)
+
         # Update sources
         self.sources.update(entity.sources)
         self.updated_at = datetime.now()
+    
+    def add_entities(self, entities: List[Entity]) -> None:
+        """Add multiple entities to the graph"""
+        for entity in entities:
+            self.add_entity(entity)
     
     def add_relationship(self, relationship: Relationship) -> None:
         """Add a relationship to the graph"""
@@ -86,6 +101,11 @@ class KnowledgeGraph(BaseModel):
         self.sources.update(relationship.properties.sources)
         self.updated_at = datetime.now()
     
+    def add_relationships(self, relationships: List[Relationship]) -> None:
+        """Add multiple relationships to the graph"""
+        for relationship in relationships:
+            self.add_relationship(relationship)
+    
     def get_entity_by_id(self, entity_id: str) -> Optional[Entity]:
         """Get entity by ID"""
         for entity in self.entities:
@@ -94,9 +114,10 @@ class KnowledgeGraph(BaseModel):
         return None
     
     def get_entity_by_name(self, name: str) -> Optional[Entity]:
-        """Get entity by name"""
+        """Get entity by normalized name (case/space insensitive)"""
+        normalized = name.strip().lower()
         for entity in self.entities:
-            if entity.name.lower() == name.lower():
+            if entity.name.strip().lower() == normalized:
                 return entity
         return None
     
@@ -152,7 +173,7 @@ class KnowledgeGraph(BaseModel):
         
         return merged
     
-    def get_stats(self) -> Dict[str, any]:
+    def get_stats(self) -> Dict[str, Any]:
         """Get statistics about the KG"""
         entity_types = {}
         for entity in self.entities:
@@ -190,6 +211,17 @@ class KnowledgeGraph(BaseModel):
             "metadata": self.metadata,
             "stats": self.get_stats()
         }
+    
+    def save_json(self, file_path) -> None:
+        """Save KG to JSON file"""
+        import json
+        from pathlib import Path
+        
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(self.to_dict(), f, indent=2, default=str, ensure_ascii=False)
     
     class Config:
         arbitrary_types_allowed = True

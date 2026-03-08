@@ -1,4 +1,67 @@
-run_all.sh
-/financial_kg
-/indic-llm
-/itext2kg
+﻿# ============================================================
+# FinTraceQA — .gitignore
+# ============================================================
+
+# ── Python environments ──────────────────────────────────────
+.venv/
+venv/
+env/
+.env/
+
+# ── Environment variables ────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python cache ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Model files (large binaries) ─────────────────────────────
+translation_model/checkpoints/
+translation_model/tokenizer/
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# ── Training data & outputs ───────────────────────────────────
+output/
+logs/
+cache/
+
+# ── Jupyter ───────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Node / Expo (Finterest frontend) ────────────────────────
+Finterest/node_modules/
+Finterest/.expo/
+Finterest/dist/
+Finterest/.env
+Finterest/.env.*
+!Finterest/.env.example
+
+# ── OS / editor ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# ── Build artifacts ──────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+
+# ── Financial KG internal cache/logs ─────────────────────────
+financial_kg/cache/
+financial_kg/logs/
+financial_kg/output/
+financial_kg/__pycache__/
