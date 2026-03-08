@@ -1,0 +1,104 @@
+{
+  "app": {
+    "name": "FinTraceQA"
+  },
+  "auth": {
+    "login": "लॉग इन करें",
+    "signup": "साइन अप करें",
+    "logout": "लॉग आउट",
+    "email": "ईमेल",
+    "password": "पासवर्ड",
+    "confirmPassword": "पासवर्ड की पुष्टि करें",
+    "fullName": "पूरा नाम",
+    "noAccount": "खाता नहीं है? साइन अप करें",
+    "hasAccount": "पहले से खाता है? लॉग इन करें",
+    "loginTitle": "वापस स्वागत है",
+    "loginSubtitle": "अपने खाते में साइन इन करें",
+    "signupTitle": "खाता बनाएं",
+    "signupSubtitle": "FinTraceQA से जुड़ें",
+    "investorType": "निवेशक प्रकार",
+    "riskAppetite": "जोखिम स्तर",
+    "preferredLanguage": "पसंदीदा भाषा",
+    "retail": "खुदरा",
+    "institutional": "संस्थागत",
+    "student": "छात्र",
+    "low": "कम",
+    "medium": "मध्यम",
+    "high": "उच्च",
+    "loading": "कृपया प्रतीक्षा करें...",
+    "forgotPassword": "पासवर्ड भूल गए?"
+  },
+  "errors": {
+    "invalidEmail": "अमान्य ईमेल पता",
+    "weakPassword": "पासवर्ड कम से कम 6 अक्षरों का होना चाहिए",
+    "passwordMismatch": "पासवर्ड मेल नहीं खाते",
+    "userNotFound": "इस ईमेल से कोई खाता नहीं मिला",
+    "wrongPassword": "गलत पासवर्ड",
+    "emailInUse": "ईमेल पहले से उपयोग में है",
+    "networkError": "नेटवर्क त्रुटि। पुनः प्रयास करें।",
+    "genericError": "कुछ गलत हो गया। पुनः प्रयास करें।",
+    "fillAllFields": "कृपया सभी फ़ील्ड भरें",
+    "nameTooShort": "नाम कम से कम 2 अक्षरों का होना चाहिए"
+  },
+  "tabs": {
+    "news": "समाचार",
+    "chatbot": "चैटबॉट",
+    "profile": "प्रोफ़ाइल"
+  },
+  "news": {
+    "title": "वित्तीय समाचार",
+    "readMore": "और पढ़ें",
+    "pullToRefresh": "ताज़ा करने के लिए खींचें",
+    "loading": "समाचार लोड हो रहे हैं...",
+    "empty": "अभी कोई समाचार उपलब्ध नहीं है।",
+    "error": "समाचार लोड करने में विफल। पुनः प्रयास करें।",
+    "retry": "पुनः प्रयास",
+    "source": "स्रोत",
+    "justNow": "अभी"
+  },
+  "chatbot": {
+    "title": "वित्तीय सहायक",
+    "placeholder": "वित्तीय प्रश्न पूछें...",
+    "send": "भेजें",
+    "typing": "सोच रहा है...",
+    "viewReasoning": "तर्क स्पष्टीकरण देखें",
+    "hideReasoning": "स्पष्टीकरण छुपाएं",
+    "confidence": "विश्वास स्तर",
+    "greeting": "नमस्ते! मैं आपका वित्तीय सहायक हूं। वित्त, निवेश या बाजारों के बारे में कुछ भी पूछें।",
+    "error": "प्रतिक्रिया प्राप्त करने में विफल। पुनः प्रयास करें।"
+  },
+  "profile": {
+    "title": "प्रोफ़ाइल",
+    "name": "नाम",
+    "email": "ईमेल",
+    "language": "भाषा",
+    "investorType": "निवेशक प्रकार",
+    "riskAppetite": "जोखिम स्तर",
+    "editProfile": "प्रोफ़ाइल संपादित करें",
+    "changeLanguage": "भाषा बदलें",
+    "logout": "लॉग आउट",
+    "memberSince": "सदस्यता",
+    "saveChanges": "परिवर्तन सहेजें",
+    "cancel": "रद्द करें",
+    "updateSuccess": "प्रोफ़ाइल सफलतापूर्वक अपडेट की गई"
+  },
+  "language": {
+    "select": "भाषा चुनें",
+    "en": "अंग्रेज़ी",
+    "ta": "तमिल",
+    "hi": "हिन्दी",
+    "ml": "मलयालम",
+    "te": "तेलुगु",
+    "mr": "मराठी"
+  },
+  "common": {
+    "ok": "ठीक है",
+    "cancel": "रद्द करें",
+    "save": "सहेजें",
+    "close": "बंद करें",
+    "back": "वापस",
+    "loading": "लोड हो रहा है...",
+    "error": "त्रुटि",
+    "success": "सफलता"
+  }
+}

@@ -42,10 +42,16 @@ def setup_logging(
         fmt='%(levelname)s: %(message)s'
     )
     
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Console handler with UTF-8 encoding for Windows
+    import io
+    if hasattr(sys.stdout, 'buffer'):
+        utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+    else:
+        utf8_stdout = sys.stdout
+    console_handler = logging.StreamHandler(utf8_stdout)
     console_handler.setLevel(getattr(logging, level.upper()))
     console_handler.setFormatter(simple_formatter)
+    
     root_logger.addHandler(console_handler)
     
     # File handler (if log_file specified)

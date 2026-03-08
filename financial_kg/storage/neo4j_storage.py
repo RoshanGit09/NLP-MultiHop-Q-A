@@ -6,11 +6,11 @@ from typing import Optional, List, Dict, Any
 from neo4j import GraphDatabase
 from datetime import datetime
 
-from models.knowledge_graph import KnowledgeGraph
-from models.entity import Entity
-from models.relationship import Relationship
-from utils.logging_config import get_logger
-from utils.config import get_config
+from ..models.knowledge_graph import KnowledgeGraph
+from ..models.entity import Entity
+from ..models.relationship import Relationship
+from ..utils.logging_config import get_logger
+from ..utils.config import get_config
 
 logger = get_logger(__name__)
 config = get_config()
@@ -51,12 +51,14 @@ class Neo4jStorage:
         try:
             self.driver = GraphDatabase.driver(
                 self.uri,
-                auth=(self.username, self.password)
+                auth=(self.username, self.password),
+                connection_timeout=10,
+                max_transaction_retry_time=10
             )
             # Test connection
             with self.driver.session() as session:
                 session.run("RETURN 1")
-            logger.info("✓ Connected to Neo4j successfully")
+            logger.info("Connected to Neo4j successfully")
         except Exception as e:
             logger.error(f"Failed to connect to Neo4j: {e}")
             raise
@@ -80,7 +82,7 @@ class Neo4jStorage:
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
         
-        logger.info("✓ Database cleared")
+        logger.info("[OK] Database cleared")
     
     def visualize_graph(
         self,
@@ -106,7 +108,11 @@ class Neo4jStorage:
         # Upload relationships
         self._upload_relationships(knowledge_graph.relationships)
         
-        logger.info("✓ Knowledge graph uploaded to Neo4j")
+        logger.info("[OK] Knowledge graph uploaded to Neo4j")
+    
+    def upload_kg(self, knowledge_graph: KnowledgeGraph, clear_existing: bool = False):
+        """Alias for visualize_graph for API consistency"""
+        self.visualize_graph(knowledge_graph, clear_existing=clear_existing)
     
     def _upload_entities(self, entities: List[Entity]):
         """Upload entities as nodes"""
@@ -133,15 +139,35 @@ class Neo4jStorage:
                     elif value is not None:
                         properties[key] = value
                 
-                # Create node with label based on entity type
+                # MERGE on id first; also set name so a secondary name-based merge
+                # can prevent duplicates from stale runs with different IDs
                 cypher = f"""
                 MERGE (n:{entity.type} {{id: $id}})
-                SET n += $properties
+                ON CREATE SET n += $properties
+                ON MATCH  SET n += $properties
+                WITH n
+                CALL {{
+                    WITH n
+                    MATCH (dup:{entity.type})
+                    WHERE toLower(dup.name) = toLower($name)
+                      AND dup.id <> $id
+                    WITH dup LIMIT 1
+                    CALL apoc.refactor.mergeNodes([n, dup], {{properties: 'discard'}})
+                    YIELD node RETURN node
+                }}
+                RETURN n
                 """
-                
-                session.run(cypher, id=entity.id, properties=properties)
+                try:
+                    session.run(cypher, id=entity.id, properties=properties, name=entity.name)
+                except Exception:
+                    # APOC not available – fall back to plain MERGE (fine for fresh DBs)
+                    plain = f"""
+                    MERGE (n:{entity.type} {{id: $id}})
+                    SET n += $properties
+                    """
+                    session.run(plain, id=entity.id, properties=properties)
         
-        logger.info(f"✓ Uploaded {len(entities)} entities")
+        logger.info(f"[OK] Uploaded {len(entities)} entities")
     
     def _upload_relationships(self, relationships: List[Relationship]):
         """Upload relationships as edges"""
@@ -204,7 +230,7 @@ class Neo4jStorage:
                     properties=properties
                 )
         
-        logger.info(f"✓ Uploaded {len(relationships)} relationships")
+        logger.info(f"[OK] Uploaded {len(relationships)} relationships")
     
     def execute_query(self, cypher_query: str, parameters: Optional[Dict] = None) -> List[Dict]:
         """
@@ -223,7 +249,7 @@ class Neo4jStorage:
             result = session.run(cypher_query, parameters or {})
             records = [record.data() for record in result]
         
-        logger.info(f"✓ Query returned {len(records)} results")
+        logger.info(f"[OK] Query returned {len(records)} results")
         return records
     
     def get_entity_by_id(self, entity_id: str) -> Optional[Dict]:
@@ -362,11 +388,11 @@ if __name__ == "__main__":
             results = storage.search_entities_by_name("Reliance")
             print(f"  Found: {len(results)} entities")
             
-            print("\n✓ Neo4j storage test complete!")
+            print("\n[OK] Neo4j storage test complete!")
             print("\nOpen Neo4j Browser at http://localhost:7474")
             print("Run: MATCH (n) RETURN n")
     except Exception as e:
-        print(f"\n✗ Neo4j test failed: {e}")
+        print(f"\n[FAIL] Neo4j test failed: {e}")
         print("\nMake sure Neo4j is running!")
         print("Install: Download from https://neo4j.com/download/")
         print("Or use Neo4j Desktop or Docker")

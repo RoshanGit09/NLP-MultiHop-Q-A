@@ -1,9 +1,9 @@
 """
 Temporal models for 4-dimensional time tracking in FinancialKG
 """
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime, date, time
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
 
@@ -55,7 +55,7 @@ class TemporalAttributes(BaseModel):
         description="When information takes effect (e.g., policy start date, merger completion)"
     )
     
-    t_observe: datetime = Field(
+    t_observe: Optional[datetime] = Field(
         default_factory=datetime.now,
         description="When we collected/processed this data"
     )
@@ -86,6 +86,76 @@ class TemporalAttributes(BaseModel):
         default_factory=list,
         description="All dates when this relationship was observed (for tracking updates)"
     )
+    
+    @field_validator('t_announce', 't_effective', 't_observe', 't_impact_start', 't_impact_end', mode='before')
+    @classmethod
+    def parse_datetime(cls, v):
+        """Parse datetime from string or return None for unparseable values."""
+        import re as _re
+        if v is None or v == "":
+            return None
+        if isinstance(v, (datetime, date)):
+            return v
+        if not isinstance(v, str):
+            return None
+        v = v.strip()
+
+        # --- explicit skip-list (non-date strings Gemini commonly returns) ---
+        _SKIP = {
+            "YYYY-MM-DD", "UNKNOWN", "N/A", "NA", "NULL", "NONE",
+            "FUTURE", "ONGOING", "IMMEDIATE", "CURRENT", "HISTORICAL",
+            "P_CURRENT", "P_FUTURE", "P_PAST",
+        }
+        if v.upper() in _SKIP:
+            return None
+
+        # reject anything that is clearly not date-like (no digit at all)
+        if not _re.search(r'\d', v):
+            return None
+
+        # --- range strings like "2025-04-01 to 2026-03-31"
+        #     "2025-04-01/2025-06-30"  → take the start date
+        range_match = _re.match(
+            r'(\d{4}-\d{2}-\d{2})\s*(?:to|/)\s*\d{4}-\d{2}-\d{2}', v
+        )
+        if range_match:
+            v = range_match.group(1)
+
+        # --- "prior to YYYY-MM-DD", "after YYYY-MM-DD", "before YYYY-MM-DD"
+        rel_match = _re.search(r'(\d{4}-\d{2}-\d{2})', v)
+
+        # --- year-only: "2024", "2025"
+        if _re.fullmatch(r'\d{4}', v):
+            return datetime(int(v), 1, 1)
+
+        # --- year-month: "2025-07", "2025-05"
+        ym = _re.fullmatch(r'(\d{4})-(\d{2})', v)
+        if ym:
+            return datetime(int(ym.group(1)), int(ym.group(2)), 1)
+
+        # --- standard formats
+        for fmt in (
+            '%Y-%m-%d',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d %H:%M',
+            '%d-%m-%Y',
+            '%d/%m/%Y',
+        ):
+            try:
+                return datetime.strptime(v, fmt)
+            except ValueError:
+                continue
+
+        # --- try extracting any YYYY-MM-DD substring as fallback
+        if rel_match:
+            try:
+                return datetime.strptime(rel_match.group(1), '%Y-%m-%d')
+            except ValueError:
+                pass
+
+        # --- anything else (fuzzy text like "near term", "FY25-27") → None
+        return None
     
     @property
     def impact_range(self) -> Optional[TimeRange]:

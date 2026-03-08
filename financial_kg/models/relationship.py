@@ -77,6 +77,12 @@ class RelationshipProperties(BaseModel):
         description="Prominence of mention (e.g., headline vs buried in article)"
     )
     
+    # Source text snippet
+    source_text: Optional[str] = Field(
+        default=None,
+        description="Exact text span from which this relationship was extracted"
+    )
+    
     # Custom properties
     custom_properties: Dict[str, Any] = Field(
         default_factory=dict,

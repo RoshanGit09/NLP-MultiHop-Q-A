@@ -1,3 +1,7 @@
 """Extractors package for FinancialKG"""
 
-__all__ = []
+from .gemini_atomic_extractor import GeminiAtomicExtractor
+
+__all__ = [
+    "GeminiAtomicExtractor",
+]

@@ -7,8 +7,8 @@ from typing import List, Dict, Optional, Union
 from datetime import datetime, date
 import glob
 
-from utils.logging_config import get_logger
-from utils.config import get_config
+from ..utils.logging_config import get_logger
+from ..utils.config import get_config
 
 logger = get_logger(__name__)
 config = get_config()
